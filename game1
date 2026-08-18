@@ -6,7 +6,7 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#050608;font-family:'Courier New',monospace}
-canvas{display:block}
+canvas{display:block;touch-action:none}
 #hud{position:fixed;inset:0;pointer-events:none;color:#8fd6ff}
 #topbar{position:absolute;top:0;left:0;right:0;padding:12px 18px;background:linear-gradient(180deg,rgba(5,6,8,.9),transparent)}
 #topbar .title{font-size:13px;letter-spacing:1px;color:#59c2ff;text-transform:uppercase}
@@ -26,6 +26,22 @@ canvas{display:block}
 @keyframes load{0%{transform:translateX(-100%)}100%{transform:translateX(350%)}}
 .flag{display:inline-block;padding:1px 7px;border-radius:3px;font-size:9.5px;margin-left:6px}
 .flag-bridge{background:#a3651c55;color:#ffb26b;border:1px solid #ffb26b66}
+
+/* ═══ CONTROLES DE TOQUE (mobile) ═══ */
+#touchControls{position:fixed;inset:0;pointer-events:none;z-index:20;display:none;user-select:none;-webkit-user-select:none}
+#touchControls.active{display:block}
+.tbtn{position:absolute;pointer-events:auto;display:flex;align-items:center;justify-content:center;
+  background:rgba(20,26,32,0.65);border:2px solid #59c2ff55;border-radius:50%;color:#8fd6ff;
+  font-family:'Courier New',monospace;font-size:26px;font-weight:bold;touch-action:none;
+  -webkit-tap-highlight-color:transparent;transition:background .1s,border-color .1s}
+.tbtn:active,.tbtn.pressed{background:rgba(89,194,255,0.35);border-color:#59c2ff}
+#btnForward{width:78px;height:78px;right:100px;bottom:110px;font-size:34px}
+#btnBackward{width:64px;height:64px;right:110px;bottom:24px;font-size:26px}
+#btnLeft{width:60px;height:60px;left:24px;bottom:48px}
+#btnRight{width:60px;height:60px;left:96px;bottom:48px}
+#btnCamera{width:56px;height:56px;top:14px;right:18px;font-size:16px;letter-spacing:0}
+#touchOrbitHint{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);color:#6b7580;
+  font-size:9.5px;pointer-events:none;text-align:center;display:none}
 </style>
 </head>
 <body>
@@ -47,7 +63,17 @@ canvas{display:block}
 <div id="progressbar"><div id="progressfill"></div></div>
 </div>
 
+<div id="touchControls">
+  <div class="tbtn" id="btnLeft">◀</div>
+  <div class="tbtn" id="btnRight">▶</div>
+  <div class="tbtn" id="btnBackward">▼</div>
+  <div class="tbtn" id="btnForward">▲</div>
+  <div class="tbtn" id="btnCamera">CÂM</div>
+  <div id="touchOrbitHint">arraste a tela pra orbitar</div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- COLE SEU ROAD_DATA AQUI -->
@@ -79,12 +105,10 @@ routeCurve.arcLengthDivisions=6000;
 const SAMPLE_STEP=4;
 const nSamples=Math.max(2,Math.round(routeCurve.getLength()/SAMPLE_STEP));
 const curvePos=routeCurve.getSpacedPoints(nSamples);
-
 function nearestRaw(v){let b=Infinity,r=P[0];for(let k=0;k<P.length;k++){const dx=P[k].x-v.x,dz=P[k].z-v.z,d=dx*dx+dz*dz;if(d<b){b=d;r=P[k]}}return r}
 let accKm=0;
 const S=curvePos.map((v,i)=>{if(i>0)accKm+=curvePos[i-1].distanceTo(v)/1000;const s=nearestRaw(v);return{x:v.x,y:v.y,z:v.z,km:accKm,lanes:s.lanes,oneway:s.oneway,surface:s.surface,ref:s.ref,bridge:s.bridge,medW:s.medW}});
 const totalKmCurve=S[S.length-1].km;
-
 const roundaboutFlatY=[];
 (D.roundabouts||[]).forEach(r=>{const raw=r.points;if(raw.length<3){roundaboutFlatY.push(null);return}
 const pts=(raw.length>1&&Math.abs(raw[0].x-raw[raw.length-1].x)<.01&&Math.abs(raw[0].z-raw[raw.length-1].z)<.01)?raw.slice(0,-1):raw;
@@ -93,7 +117,6 @@ let bd=Infinity,flatY=650;S.forEach(s=>{const dd=(s.x-cx)**2+(s.z-cz)**2;if(dd<b
 let outerR=0;pts.forEach(p=>{const d=Math.hypot(p.x-cx,p.z-cz);if(d>outerR)outerR=d});
 const M=60;S.forEach(s=>{const dist=Math.hypot(s.x-cx,s.z-cz);if(dist<outerR)s.y=flatY;else if(dist<outerR+M){const t=(dist-outerR)/M,sm=t*t*(3-2*t);s.y=flatY*(1-sm)+s.y*sm}});
 roundaboutFlatY.push(flatY)});
-
 function stateAtDistance(distM){const d=Math.max(0,Math.min(distM,totalKmCurve*1000-.01));let lo=0,hi=S.length-1;while(lo<hi-1){const mid=(lo+hi)>>1;if(S[mid].km*1000<=d)lo=mid;else hi=mid}const a=S[lo],b=S[hi];const seg=(b.km-a.km)*1000;const t=seg>0?(d-a.km*1000)/seg:0;return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t,z:a.z+(b.z-a.z)*t,dirX:b.x-a.x,dirZ:b.z-a.z,lanes:a.lanes,oneway:a.oneway,surface:a.surface,ref:a.ref,bridge:a.bridge,km:a.km+(b.km-a.km)*t}}
 
 // ═══════════════════════════════════════════════════════════════
@@ -101,7 +124,7 @@ function stateAtDistance(distM){const d=Math.max(0,Math.min(distM,totalKmCurve*1
 // ═══════════════════════════════════════════════════════════════
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x87CEEB);
-scene.fog=new THREE.Fog(0x87CEEB,250,600);
+scene.fog=new THREE.Fog(0x87CEEB,400,2200);
 const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.5,8000);
 const renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth,innerHeight);
@@ -122,7 +145,7 @@ const LANE_WIDTH=3.5;
 function widthFor(pt){if(pt.lanes){const n=parseInt(pt.lanes);if(!isNaN(n)&&n>0)return{w:n*LANE_WIDTH,n}}const f=(pt.ref||'').includes('135');return{w:(f?2:1)*LANE_WIDTH,n:f?2:1}}
 
 // ═══════════════════════════════════════════════════════════════
-// 4. TERRENO SRTM + FUSÃO
+// 4. TERRENO SRTM
 // ═══════════════════════════════════════════════════════════════
 const TANGENT_WINDOW=7,TRANSITION_DIST=30,SHOULDER_WIDTH=2.0,LAT_HALF_EXTENT=150,LAT_STEP=4,LON_STRIDE=3;
 const ASPHALT_COL=[.14,.14,.16],BRIDGE_COL=[.38,.40,.44],SHOULDER_COL=[.32,.28,.20];
@@ -143,39 +166,279 @@ function elevColor(h){const t=(h-elevMin)/(elevMax-elevMin||1);let r,g,b;if(t<.4
 function lerpCol(a,b,t){return[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t]}
 const roundCircles=(D.roundabouts||[]).map((r,ri)=>{const raw=r.points;if(raw.length<3||roundaboutFlatY[ri]==null)return null;const pts=(raw.length>1&&Math.abs(raw[0].x-raw[raw.length-1].x)<.01&&Math.abs(raw[0].z-raw[raw.length-1].z)<.01)?raw.slice(0,-1):raw;const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length,cz=pts.reduce((s,p)=>s+p.z,0)/pts.length;let outerR=0;pts.forEach(p=>{const d=Math.hypot(p.x-cx,p.z-cz);if(d>outerR)outerR=d});return{cx,cz,outerR,flatY:roundaboutFlatY[ri]}}).filter(Boolean);
 
+// ═══════════════════════════════════════════════════════════════
+// terrainHeightAt — antes dos prefabs
+// ═══════════════════════════════════════════════════════════════
+function terrainHeightAt(px,pz){
+  let bd=Infinity,bi=0;
+  for(let i=0;i<S.length;i+=3){const dx=S[i].x-px,dz=S[i].z-pz,dd=dx*dx+dz*dz;if(dd<bd){bd=dd;bi=i}}
+  const s=S[bi];
+  const prev=S[Math.max(bi-TANGENT_WINDOW,0)],next=S[Math.min(bi+TANGENT_WINDOW,S.length-1)];
+  const dx=next.x-prev.x,dz=next.z-prev.z;const l=Math.sqrt(dx*dx+dz*dz)||1;
+  const L=Math.sqrt(bd);
+  const roadHalf=widthFor(s).w/2;
+  const hasParallel=s.oneway&&s.medW!=null;
+  const natural=sampleSRTM(s.km,L);
+  const dRoad=L-roadHalf;
+  const dPar=hasParallel?Math.abs(L-s.medW)-LANE_WIDTH:Infinity;
+  let dRound=Infinity,roundY=0;
+  roundCircles.forEach(c=>{const dd=Math.hypot(px-c.cx,pz-c.cz)-c.outerR;if(dd<dRound){dRound=dd;roundY=c.flatY}});
+  const dMin=Math.min(dRoad,dPar,dRound);
+  const roadY=dMin===dRound?roundY:s.y;
+  if(dMin<=SHOULDER_WIDTH)return roadY;
+  const MARGIN=1.9;
+  if(dMin<TRANSITION_DIST){const t=(dMin-SHOULDER_WIDTH)/(TRANSITION_DIST-SHOULDER_WIDTH);const sm=t*t*(3-2*t);return roadY*(1-sm)+(natural+MARGIN)*sm}
+  return natural+MARGIN;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ██████████████████████████████████████████████████████████████
+// SISTEMA DE PREFABS DE CRUZAMENTO
+//
+// LÓGICA CENTRAL:
+//  1. Para cada rua em D.crossing_streets, acha o ponto dela
+//     mais próximo da BR → esse é o centro do cruzamento.
+//  2. Calcula a direção da BR e da rua nesse ponto.
+//  3. Constrói um polígono de cruzamento grande o suficiente
+//     para cobrir toda a área onde as duas malhas se sobrepõem.
+//     O polígono é uma "gravata borboleta" / losango alongado:
+//     não é um quadrado — é um shape com 8 vértices que segue
+//     os dois eixos das vias, com largura proporcional a cada via.
+//  4. Corta buildFused() e as ruas transversais FORA desse
+//     polígono: vértices dentro → cota do prefab, malha do
+//     prefab fica no topo via polygonOffset.
+//  5. SEM faixas de pedestres. SEM calçada. Só asfalto limpo.
+// ██████████████████████████████████████████████████████████████
+// ═══════════════════════════════════════════════════════════════
+
+const MAT_CROSS=new THREE.MeshStandardMaterial({
+  color:0x1e1e22,roughness:.82,metalness:.05,
+  polygonOffset:true,polygonOffsetFactor:-6,polygonOffsetUnits:-6
+});
+
+// Registro: cada entrada tem os dados necessários para o teste
+// ponto-dentro-polígono (convexo, 8 verts no plano XZ)
+// { cx,cy,cz, poly2d:[{x,z},...], flatY }
+const XREG=[];
+
+// ── ponto dentro de polígono convexo 2-D (winding/cross product) ──
+function insidePoly(px,pz,poly){
+  const n=poly.length;
+  let sign=0;
+  for(let i=0;i<n;i++){
+    const a=poly[i],b=poly[(i+1)%n];
+    const cross=(b.x-a.x)*(pz-a.z)-(b.z-a.z)*(px-a.x);
+    if(cross===0)continue;
+    const s=cross>0?1:-1;
+    if(sign===0)sign=s;
+    else if(s!==sign)return false;
+  }
+  return true;
+}
+
+function ptInAnyX(px,pz){
+  for(const r of XREG)if(insidePoly(px,pz,r.poly2d))return r;
+  return null;
+}
+
+// ── Constrói o polígono de cruzamento ─────────────────────────────
+// Dados dois eixos (BR e rua), com half-widths wA e wB,
+// e um centro cx,cz, gera um polígono com 8 vértices que cobre
+// toda a área de sobreposição das duas faixas de asfalto,
+// com um padding generoso para não sobrar "sombra pintada".
+//
+// O shape é a UNIÃO convexa das duas faixas retangulares:
+//   Faixa A: retângulo ao longo da BR   (largura wA*2, comprimento wB*2+pad)
+//   Faixa B: retângulo ao longo da rua  (largura wB*2, comprimento wA*2+pad)
+// A união convexa de dois retângulos centrados é um octógono.
+function buildCrossPolygon(cx,cz,
+  brDX,brDZ,   // direção unitária da BR
+  stDX,stDZ,   // direção unitária da rua
+  wBR,         // half-width da BR
+  wST,         // half-width da rua
+  extraPad     // padding extra além das larguras
+){
+  // Perpendiculares
+  const brPX=-brDZ, brPZ=brDX;
+  const stPX=-stDZ, stPZ=stDX;
+
+  // Extend: quanto cada faixa se estende na direção longitudinal
+  // Use a half-width da outra via + pad como extensão
+  const extBR=wST+extraPad;  // BR se estende até cobrir a largura da rua
+  const extST=wBR+extraPad;  // rua se estende até cobrir a largura da BR
+
+  // 8 pontos: cantos das duas faixas intercalados
+  // Faixa BR: 4 cantos
+  const brC=[
+    {x:cx+brDX*extBR+brPX*wBR, z:cz+brDZ*extBR+brPZ*wBR},
+    {x:cx+brDX*extBR-brPX*wBR, z:cz+brDZ*extBR-brPZ*wBR},
+    {x:cx-brDX*extBR-brPX*wBR, z:cz-brDZ*extBR-brPZ*wBR},
+    {x:cx-brDX*extBR+brPX*wBR, z:cz-brDZ*extBR+brPZ*wBR},
+  ];
+  // Faixa rua: 4 cantos
+  const stC=[
+    {x:cx+stDX*extST+stPX*wST, z:cz+stDZ*extST+stPZ*wST},
+    {x:cx+stDX*extST-stPX*wST, z:cz+stDZ*extST-stPZ*wST},
+    {x:cx-stDX*extST-stPX*wST, z:cz-stDZ*extST-stPZ*wST},
+    {x:cx-stDX*extST+stPX*wST, z:cz-stDZ*extST+stPZ*wST},
+  ];
+
+  // Hull convexo dos 8 pontos (Graham scan simplificado)
+  const all=[...brC,...stC];
+  return convexHull(all);
+}
+
+function convexHull(pts){
+  // Andrew's monotone chain
+  const p=[...pts].sort((a,b)=>a.x!==b.x?a.x-b.x:a.z-b.z);
+  const cross=(O,A,B)=>(A.x-O.x)*(B.z-O.z)-(A.z-O.z)*(B.x-O.x);
+  const lower=[],upper=[];
+  for(const pt of p){while(lower.length>=2&&cross(lower[lower.length-2],lower[lower.length-1],pt)<=0)lower.pop();lower.push(pt)}
+  for(let i=p.length-1;i>=0;i--){const pt=p[i];while(upper.length>=2&&cross(upper[upper.length-2],upper[upper.length-1],pt)<=0)upper.pop();upper.push(pt)}
+  lower.pop();upper.pop();
+  return [...lower,...upper];
+}
+
+// ── Triangula polígono convexo (fan a partir do centróide) ────────
+function triangulatePoly(poly,y){
+  const n=poly.length;
+  const cx=poly.reduce((s,p)=>s+p.x,0)/n;
+  const cz=poly.reduce((s,p)=>s+p.z,0)/n;
+  const verts=[],idx=[];
+  verts.push(cx,y,cz); // 0 = centróide
+  for(let i=0;i<n;i++)verts.push(poly[i].x,y,poly[i].z);
+  for(let i=0;i<n;i++)idx.push(0,1+i,1+(i+1)%n);
+  return{verts,idx};
+}
+
+// ── Detecta cruzamentos e constrói prefabs ─────────────────────────
+function buildAllCrossings(){
+  (D.crossing_streets||[]).forEach(st=>{
+    const rawPts=st.points;
+    if(!rawPts||rawPts.length<2)return;
+    if(st.highway==='footway')return; // ignora calçadas
+
+    const hw=st.highway;
+    const wST=( hw==='primary'||hw==='tertiary'?8:
+                hw==='residential'?7:
+                hw==='service'?5:
+                hw==='track'?4:6 )/2;
+
+    // Acha o ponto da rua mais próximo da BR
+    let bestD=Infinity,bestPtIdx=0,bestSIdx=0;
+    rawPts.forEach((p,pi)=>{
+      for(let i=0;i<S.length;i+=4){
+        const dd=(S[i].x-p[0])**2+(S[i].z-p[1])**2;
+        if(dd<bestD){bestD=dd;bestPtIdx=pi;bestSIdx=i;}
+      }
+    });
+    if(bestD>900)return; // rua não chega perto da BR (>30m)
+
+    const sp=S[bestSIdx];
+    const wBR=widthFor(sp).w/2;
+
+    // Direção da BR nesse ponto
+    const prevS=S[Math.max(bestSIdx-8,0)],nextS=S[Math.min(bestSIdx+8,S.length-1)];
+    const brDX0=nextS.x-prevS.x,brDZ0=nextS.z-prevS.z;
+    const brL=Math.hypot(brDX0,brDZ0)||1;
+    const brDX=brDX0/brL,brDZ=brDZ0/brL;
+
+    // Direção da rua no ponto de cruzamento
+    const pi=bestPtIdx;
+    const p0=rawPts[Math.max(pi-1,0)],p1=rawPts[Math.min(pi+1,rawPts.length-1)];
+    const stDX0=p1[0]-p0[0],stDZ0=p1[1]-p0[1];
+    const stL=Math.hypot(stDX0,stDZ0)||1;
+    const stDX=stDX0/stL,stDZ=stDZ0/stL;
+
+    // Centro do prefab = ponto da BR mais próximo
+    const cx=sp.x,cz=sp.z,cy=sp.y;
+
+    // Padding generoso: cobre a "sombra pintada" que aparecia antes
+    // Usa 1.5× a largura da via menor como padding mínimo
+    const extraPad=Math.max(wBR,wST)*1.5+4.0;
+
+    const poly=buildCrossPolygon(cx,cz,brDX,brDZ,stDX,stDZ,wBR,wST,extraPad);
+
+    // Registra
+    XREG.push({cx,cy,cz,poly2d:poly,flatY:cy});
+
+    // Malha de asfalto do prefab
+    const{verts,idx}=triangulatePoly(poly,cy+0.07);
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const mesh=new THREE.Mesh(geo,MAT_CROSS);
+    mesh.receiveShadow=true;
+    scene.add(mesh);
+  });
+  console.log(`[CROSSINGS] ${XREG.length} prefabs de cruzamento gerados`);
+}
+buildAllCrossings();
+
+// ═══════════════════════════════════════════════════════════════
+// 4b. buildFused — vértices dentro do prefab usam cota do prefab
+// ═══════════════════════════════════════════════════════════════
 function buildFused(){
   const verts=[],colors=[],indices=[];
-  const lateralArr=[];for(let d=-LAT_HALF_EXTENT;d<=LAT_HALF_EXTENT;d+=LAT_STEP)lateralArr.push(d);
-  const nLat=lateralArr.length;const stations=[];for(let i=0;i<S.length;i+=LON_STRIDE)stations.push(i);const nSt=stations.length;
-  for(let si=0;si<nSt;si++){const i=stations[si];const s=S[i];
+  const lateralArr=[];
+  for(let d=-LAT_HALF_EXTENT;d<=LAT_HALF_EXTENT;d+=LAT_STEP)lateralArr.push(d);
+  const nLat=lateralArr.length;
+  const stations=[];
+  for(let i=0;i<S.length;i+=LON_STRIDE)stations.push(i);
+  const nSt=stations.length;
+  for(let si=0;si<nSt;si++){
+    const i=stations[si];const s=S[i];
     const prev=S[Math.max(i-TANGENT_WINDOW,0)],next=S[Math.min(i+TANGENT_WINDOW,S.length-1)];
     const dx=next.x-prev.x,dz=next.z-prev.z;const l=Math.sqrt(dx*dx+dz*dz)||1;
-    const nx=-dz/l,nz=dx/l;const roadHalf=widthFor(s).w/2;
-    const hasParallel=s.oneway&&s.medW!=null;const parCenter=hasParallel?-s.medW:null;const parHalf=LANE_WIDTH;
-    for(let li=0;li<nLat;li++){const L=lateralArr[li];const px=s.x+nx*L,pz=s.z+nz*L;
-      const natural=sampleSRTM(s.km,Math.abs(L));const dRoad=Math.abs(L)-roadHalf;
+    const nx=-dz/l,nz=dx/l;
+    const roadHalf=widthFor(s).w/2;
+    const hasParallel=s.oneway&&s.medW!=null;
+    const parCenter=hasParallel?-s.medW:null;const parHalf=LANE_WIDTH;
+    for(let li=0;li<nLat;li++){
+      const L=lateralArr[li];const px=s.x+nx*L,pz=s.z+nz*L;
+      const natural=sampleSRTM(s.km,Math.abs(L));
+      const dRoad=Math.abs(L)-roadHalf;
       const dPar=hasParallel?Math.abs(L-parCenter)-parHalf:Infinity;
-      let dRound=Infinity,roundY=0;roundCircles.forEach(c=>{const dd=Math.hypot(px-c.cx,pz-c.cz)-c.outerR;if(dd<dRound){dRound=dd;roundY=c.flatY}});
-      const dMin=Math.min(dRoad,dPar,dRound);const roadY=dMin===dRound?roundY:s.y;let y,col;
+      let dRound=Infinity,roundY=0;
+      roundCircles.forEach(c=>{const dd=Math.hypot(px-c.cx,pz-c.cz)-c.outerR;if(dd<dRound){dRound=dd;roundY=c.flatY}});
+      const dMin=Math.min(dRoad,dPar,dRound);
+      const roadY=dMin===dRound?roundY:s.y;
+      let y,col;
       if(dMin<=0){y=roadY;col=s.bridge?BRIDGE_COL:ASPHALT_COL}
       else if(dMin<=SHOULDER_WIDTH){y=roadY;col=lerpCol(ASPHALT_COL,SHOULDER_COL,dMin/SHOULDER_WIDTH)}
       else if(dMin<TRANSITION_DIST){const t=(dMin-SHOULDER_WIDTH)/(TRANSITION_DIST-SHOULDER_WIDTH);const sm=t*t*(3-2*t);y=roadY*(1-sm)+natural*sm;col=lerpCol(SHOULDER_COL,elevColor(natural),sm)}
       else{y=natural;col=elevColor(natural)}
-      verts.push(px,y,pz);colors.push(col[0],col[1],col[2])}}
+      // override dentro do prefab
+      const rec=ptInAnyX(px,pz);
+      if(rec){y=rec.flatY+0.02;col=ASPHALT_COL;}
+      verts.push(px,y,pz);colors.push(col[0],col[1],col[2]);
+    }
+  }
   for(let si=0;si<nSt-1;si++)for(let li=0;li<nLat-1;li++){const a=si*nLat+li,b=a+1,c=(si+1)*nLat+li,dd=c+1;indices.push(a,c,b,b,c,dd)}
-  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geo.setIndex(indices);geo.computeVertexNormals();
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+  geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+  geo.setIndex(indices);geo.computeVertexNormals();
   return new THREE.Mesh(geo,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.85,metalness:.05,side:THREE.DoubleSide}));
 }
 const terrain=buildFused();terrain.receiveShadow=true;scene.add(terrain);
 
 // ═══════════════════════════════════════════════════════════════
-// 5. SINALIZAÇÃO
+// 5. SINALIZAÇÃO (pula dentro de prefabs)
 // ═══════════════════════════════════════════════════════════════
 const yellowMat=new THREE.MeshBasicMaterial({color:0xf2c744});
 const whiteMat=new THREE.MeshBasicMaterial({color:0xe8e8e8});
-for(let i=0;i<S.length-1;i+=3){const a=S[i],b=S[Math.min(i+2,S.length-1)];const dx=b.x-a.x,dz=b.z-a.z,len=Math.sqrt(dx*dx+dz*dz);if(len<.5)continue;const angle=Math.atan2(dx,dz);const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2+.06,z:(a.z+b.z)/2};
-if(!a.oneway){if(i%6<3){const m=new THREE.Mesh(new THREE.BoxGeometry(.3,.02,len*.6),yellowMat);m.rotation.y=angle;m.position.set(mid.x,mid.y,mid.z);scene.add(m)}}
-else{const{w}=widthFor(a);const nnx=-dz/len,nnz=dx/len;[-1,1].forEach(side=>{const off=side*(w/2-.25);const m=new THREE.Mesh(new THREE.BoxGeometry(.22,.02,len),whiteMat);m.rotation.y=angle;m.position.set(mid.x+nnx*off,mid.y,mid.z+nnz*off);scene.add(m)})}}
+for(let i=0;i<S.length-1;i+=3){
+  const a=S[i],b=S[Math.min(i+2,S.length-1)];
+  if(ptInAnyX((a.x+b.x)/2,(a.z+b.z)/2))continue;
+  const dx=b.x-a.x,dz=b.z-a.z,len=Math.sqrt(dx*dx+dz*dz);
+  if(len<.5)continue;
+  const angle=Math.atan2(dx,dz);
+  const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2+.06,z:(a.z+b.z)/2};
+  if(!a.oneway){if(i%6<3){const m=new THREE.Mesh(new THREE.BoxGeometry(.3,.02,len*.6),yellowMat);m.rotation.y=angle;m.position.set(mid.x,mid.y,mid.z);scene.add(m)}}
+  else{const{w}=widthFor(a);const nnx=-dz/len,nnz=dx/len;[-1,1].forEach(side=>{const off=side*(w/2-.25);const m=new THREE.Mesh(new THREE.BoxGeometry(.22,.02,len),whiteMat);m.rotation.y=angle;m.position.set(mid.x+nnx*off,mid.y,mid.z+nnz*off);scene.add(m)})}
+}
 
 // ═══════════════════════════════════════════════════════════════
 // 6. PONTES
@@ -212,38 +475,143 @@ const ig=new THREE.BufferGeometry();ig.setAttribute('position',new THREE.Float32
 (D.signals||[]).forEach(s=>{let bD=1e18,bY=650;for(const rp of P){const dd=(rp.x-s.x)**2+(rp.z-s.z)**2;if(dd<bD){bD=dd;bY=rp.y}}
 const pole=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,4.2,8),new THREE.MeshStandardMaterial({color:0x2a2a2a}));pole.position.set(s.x,bY+2.1,s.z);scene.add(pole);
 const box=new THREE.Mesh(new THREE.BoxGeometry(.35,.9,.3),new THREE.MeshStandardMaterial({color:0x111111}));box.position.set(s.x,bY+4,s.z);scene.add(box);
-[.3,0,-.3].forEach((dy,i)=>{const cols=[0xff3b30,0xffd60a,0x34c759];scene.add(new THREE.Mesh(new THREE.SphereGeometry(.09,8,8),new THREE.MeshBasicMaterial({color:cols[i]})).position.set(s.x,bY+4+dy,s.z+.2))})});
+[.3,0,-.3].forEach((dy,i)=>{const cols=[0xff3b30,0xffd60a,0x34c759];const lamp=new THREE.Mesh(new THREE.SphereGeometry(.09,8,8),new THREE.MeshBasicMaterial({color:cols[i]}));lamp.position.set(s.x,bY+4+dy,s.z+.2);scene.add(lamp)})});
 
 // ═══════════════════════════════════════════════════════════════
-// 9. ★★★ VEGETAÇÃO REAL — IMAGENS PNG + RENDER 300m ★★★
-//
-// Árvores REAIS do Cerrado norte de MG (PNG transparente):
-// - Pequizeiro (Caryocar brasiliense)
-// - Ipê Amarelo (Handroanthus albus)
-// - Angico (Anadenanthera colubrina)
-// - Aroeira (Myracrodruon urundeuva)
-// - Buriti (Mauritia flexuosa)
-// - Arbustos cerrado
-// - Capim/gramínea
-//
-// Estratégia: PRÉ-GERA todas as posições, mas só MOSTRA
-// sprites dentro de 300m do caminhão (LOD dinâmico)
+// 8b. RUAS TRANSVERSAIS — cortadas nas bordas dos prefabs
 // ═══════════════════════════════════════════════════════════════
+const streetExclusionPts=[];
+const streetLineMat=new THREE.MeshBasicMaterial({color:0xf2e8c8});
 
-// URLs de imagens PNG reais de árvores (domínio público / CC0)
-const TREE_URLS = [
-  'https://i.imgur.com/8RzQKXO.png', // Árvore tropical 1
-  'https://i.imgur.com/YVH5qJZ.png', // Árvore tropical 2
-  'https://i.imgur.com/kR8yHxN.png', // Árvore cerrado
-  'https://i.imgur.com/3TfGmqP.png', // Árvore copa larga
-  'https://i.imgur.com/W5eJkHN.png', // Palmeira/buriti
-];
+(D.crossing_streets||[]).forEach(st=>{
+  const rawPts=st.points;if(rawPts.length<2)return;
+  const isAvenue=(st.highway==='primary'||st.highway==='tertiary'||st.highway==='primary_link');
+  const width=Math.max(
+    st.highway==='residential'?7:st.highway==='tertiary'?8:
+    st.highway==='service'?5:st.highway==='track'?4:
+    st.highway==='footway'?2.5:7, 7);
+
+  let crossPtIdx=0,crossStationIdx=0,bestD=Infinity;
+  rawPts.forEach((p,pi)=>{
+    for(let i=0;i<S.length;i+=5){
+      const dx=S[i].x-p[0],dz=S[i].z-p[1],dd=dx*dx+dz*dz;
+      if(dd<bestD){bestD=dd;crossPtIdx=pi;crossStationIdx=i;}
+    }
+  });
+  const anchorY=S[crossStationIdx].y;
+  const anchorX=rawPts[crossPtIdx][0],anchorZ=rawPts[crossPtIdx][1];
+  const CROSS_TRANSITION=25;
+
+  const anchors3=rawPts.map((p,pi)=>{
+    let y;
+    if(pi===crossPtIdx)y=anchorY;
+    else{
+      const dCross=Math.hypot(p[0]-anchorX,p[1]-anchorZ);
+      const natural=terrainHeightAt(p[0],p[1]);
+      if(dCross<CROSS_TRANSITION){const t=dCross/CROSS_TRANSITION,sm=t*t*(3-2*t);y=anchorY*(1-sm)+natural*sm;}
+      else y=natural;
+    }
+    return new THREE.Vector3(p[0],y,p[1]);
+  });
+
+  let curvePts=anchors3;
+  if(anchors3.length>=3)curvePts=chaikin(anchors3,3);
+  let sampled;
+  if(curvePts.length>=3){
+    const curve=new THREE.CatmullRomCurve3(curvePts,false,'centripetal');
+    const n=Math.max(2,Math.round(curve.getLength()/3));
+    sampled=curve.getSpacedPoints(n);
+  }else sampled=curvePts;
+
+  // Segmenta removendo pontos dentro de prefabs
+  const segments=[];let cur=[];
+  sampled.forEach(pt=>{
+    if(ptInAnyX(pt.x,pt.z)){if(cur.length>=2)segments.push([...cur]);cur=[];}
+    else cur.push(pt);
+  });
+  if(cur.length>=2)segments.push(cur);
+
+  segments.forEach(seg=>{
+    if(seg.length<2)return;
+    for(let i=0;i<seg.length;i+=3)streetExclusionPts.push({x:seg[i].x,z:seg[i].z,half:width/2});
+
+    const verts=[],colors2=[],idxA=[];
+    const STREET_HALF_EXTENT=Math.max(width/2+22,30);
+    const STREET_LAT_STEP=4,STREET_SHOULDER=0.6,STREET_TRANS=15;
+    const lateralArr2=[];
+    for(let d=-STREET_HALF_EXTENT;d<=STREET_HALF_EXTENT;d+=STREET_LAT_STEP)lateralArr2.push(d);
+    const nLat2=lateralArr2.length;
+    const FLARE_DIST=22;
+
+    for(let si2=0;si2<seg.length;si2++){
+      const p=seg[si2];
+      const prev2=seg[Math.max(si2-3,0)],next2=seg[Math.min(si2+3,seg.length-1)];
+      const dx=next2.x-prev2.x,dz=next2.z-prev2.z;
+      const l=Math.sqrt(dx*dx+dz*dz)||1;
+      const nx=-dz/l,nz=dx/l;
+      const dCrossHere=Math.hypot(p.x-anchorX,p.z-anchorZ);
+      const flare=dCrossHere<FLARE_DIST?(FLARE_DIST-dCrossHere)*1.8:0;
+      const halfHere=width/2+flare;
+
+      for(let li=0;li<nLat2;li++){
+        const L=lateralArr2[li];
+        const px2=p.x+nx*L,pz2=p.z+nz*L;
+        const rec=ptInAnyX(px2,pz2);
+        if(rec){verts.push(px2,rec.flatY+0.02,pz2);colors2.push(...ASPHALT_COL);continue;}
+        const natural=terrainHeightAt(px2,pz2);
+        const dStreet=Math.abs(L)-halfHere;
+        let y,col;
+        if(dStreet<=0){y=p.y;col=ASPHALT_COL;}
+        else if(dStreet<=STREET_SHOULDER){y=p.y;col=lerpCol(ASPHALT_COL,SHOULDER_COL,dStreet/STREET_SHOULDER);}
+        else if(dStreet<STREET_TRANS){const t2=(dStreet-STREET_SHOULDER)/(STREET_TRANS-STREET_SHOULDER);const sm=t2*t2*(3-2*t2);y=p.y*(1-sm)+natural*sm;col=lerpCol(SHOULDER_COL,elevColor(natural),sm);}
+        else{y=natural;col=elevColor(natural);}
+        verts.push(px2,y,pz2);colors2.push(col[0],col[1],col[2]);
+      }
+    }
+    for(let si2=0;si2<seg.length-1;si2++)for(let li=0;li<nLat2-1;li++){const a=si2*nLat2+li,b=a+1,c=(si2+1)*nLat2+li,d2=c+1;idxA.push(a,c,b,b,c,d2);}
+    if(verts.length===0)return;
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+    geo.setAttribute('color',new THREE.Float32BufferAttribute(colors2,3));
+    geo.setIndex(idxA);geo.computeVertexNormals();
+    const mesh=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.85,metalness:.05,side:THREE.DoubleSide}));
+    mesh.receiveShadow=true;scene.add(mesh);
+    if(isAvenue){
+      for(let i=0;i<seg.length-1;i+=2){
+        const a=seg[i],c2=seg[Math.min(i+1,seg.length-1)];
+        const dx2=c2.x-a.x,dz2=c2.z-a.z,len2=Math.sqrt(dx2*dx2+dz2*dz2);
+        if(len2<.3)continue;
+        const ang2=Math.atan2(dx2,dz2);
+        const line=new THREE.Mesh(new THREE.BoxGeometry(.35,.03,len2),streetLineMat);
+        line.rotation.y=ang2;
+        line.position.set((a.x+c2.x)/2,(a.y+c2.y)/2+.05,(a.z+c2.z)/2);
+        scene.add(line);
+      }
+    }
+  });
+});
+
+// ── Edifícios ──────────────────────────────────────────────────────
+function buildingHeightFor(b){if(b.height_m)return b.height_m;if(b.levels)return b.levels*3.2;const defaults={cathedral:16,school:7,train_station:6};if(defaults[b.type])return defaults[b.type];return 3.4+Math.random()*3}
+const buildingMat=new THREE.MeshStandardMaterial({color:0xcfc8b8,roughness:.85});
+const roofMatB=new THREE.MeshStandardMaterial({color:0x7a4a3a,roughness:.8});
+(D.buildings||[]).forEach(b=>{
+  const fp=b.footprint;if(fp.length<3)return;
+  const cx=fp.reduce((s,p)=>s+p[0],0)/fp.length,cz=fp.reduce((s,p)=>s+p[1],0)/fp.length;
+  let tooClose=false;for(let i=0;i<S.length;i+=20){const dx=S[i].x-cx,dz=S[i].z-cz;if(dx*dx+dz*dz<400){tooClose=true;break}}
+  if(tooClose)return;
+  const h=buildingHeightFor(b);
+  const shape=new THREE.Shape(fp.map(p=>new THREE.Vector2(p[0],-p[1])));
+  const geo=new THREE.ExtrudeGeometry(shape,{depth:h,bevelEnabled:false});geo.rotateX(-Math.PI/2);
+  const groundY=terrainHeightAt(cx,cz)+1.0;
+  const mesh=new THREE.Mesh(geo,buildingMat);mesh.position.y=groundY;mesh.castShadow=true;mesh.receiveShadow=true;scene.add(mesh);
+  const roofGeo=new THREE.ShapeGeometry(shape);roofGeo.rotateX(-Math.PI/2);
+  const roof=new THREE.Mesh(roofGeo,roofMatB);roof.position.y=groundY+h+.05;scene.add(roof);
+});
 
 // ═══════════════════════════════════════════════════════════════
-// 9. ★★★ VEGETAÇÃO — CANVAS HD + POOL 300m ★★★
-// SEM links externos — 100% offline, funciona sempre
+// 9. VEGETAÇÃO
 // ═══════════════════════════════════════════════════════════════
-
 function makeCanvasVeg(type){
   const c=document.createElement('canvas');c.width=256;c.height=340;const ctx=c.getContext('2d');
   if(type==='tree1'){
@@ -251,33 +619,27 @@ function makeCanvasVeg(type){
     ctx.beginPath();ctx.moveTo(128,330);ctx.bezierCurveTo(112,260,144,220,116,170);ctx.stroke();
     ctx.beginPath();ctx.moveTo(120,220);ctx.quadraticCurveTo(160,200,172,160);ctx.stroke();
     const canopy=['#4a6b2a','#5b7a3a','#3d5c2a','#4f6c33','#547536','#6a8c47','#71914f','#3d5c2a'];
-    for(let i=0;i<16;i++){const ang=(i/16)*Math.PI*2;ctx.fillStyle=canopy[i%canopy.length];
-      ctx.beginPath();ctx.ellipse(124+Math.cos(ang)*40,100+Math.sin(ang)*30,32+Math.random()*16,28+Math.random()*12,0,0,Math.PI*2);ctx.fill()}
+    for(let i=0;i<16;i++){const ang=(i/16)*Math.PI*2;ctx.fillStyle=canopy[i%canopy.length];ctx.beginPath();ctx.ellipse(124+Math.cos(ang)*40,100+Math.sin(ang)*30,32+Math.random()*16,28+Math.random()*12,0,0,Math.PI*2);ctx.fill()}
   }else if(type==='tree2'){
     ctx.strokeStyle='#4a3a22';ctx.lineWidth=12;ctx.lineCap='round';
     ctx.beginPath();ctx.moveTo(128,330);ctx.bezierCurveTo(140,270,110,230,135,160);ctx.stroke();
     ctx.beginPath();ctx.moveTo(130,200);ctx.quadraticCurveTo(90,180,75,140);ctx.stroke();
     ctx.beginPath();ctx.moveTo(132,180);ctx.quadraticCurveTo(170,160,180,130);ctx.stroke();
     const cols=['#3d6b22','#4a7a2a','#2d5c1a','#3f6c23','#4a7536','#5a8c37'];
-    for(let i=0;i<18;i++){const ang=(i/18)*Math.PI*2;ctx.fillStyle=cols[i%cols.length];
-      ctx.beginPath();ctx.ellipse(128+Math.cos(ang)*45,95+Math.sin(ang)*35,28+Math.random()*14,24+Math.random()*10,0,0,Math.PI*2);ctx.fill()}
+    for(let i=0;i<18;i++){const ang=(i/18)*Math.PI*2;ctx.fillStyle=cols[i%cols.length];ctx.beginPath();ctx.ellipse(128+Math.cos(ang)*45,95+Math.sin(ang)*35,28+Math.random()*14,24+Math.random()*10,0,0,Math.PI*2);ctx.fill()}
   }else if(type==='tree3'){
     ctx.strokeStyle='#6a5a42';ctx.lineWidth=10;ctx.lineCap='round';
     ctx.beginPath();ctx.moveTo(128,330);ctx.quadraticCurveTo(115,240,128,150);ctx.stroke();
     const cols=['#5b8a3a','#4f7c33','#6a9c47','#547f36','#71a14f'];
-    for(let i=0;i<12;i++){ctx.fillStyle=cols[i%cols.length];
-      const cx2=128+(Math.random()-.5)*70,cy2=70+Math.random()*80;
-      ctx.beginPath();ctx.ellipse(cx2,cy2,25+Math.random()*15,22+Math.random()*12,0,0,Math.PI*2);ctx.fill()}
+    for(let i=0;i<12;i++){ctx.fillStyle=cols[i%cols.length];const cx2=128+(Math.random()-.5)*70,cy2=70+Math.random()*80;ctx.beginPath();ctx.ellipse(cx2,cy2,25+Math.random()*15,22+Math.random()*12,0,0,Math.PI*2);ctx.fill()}
   }else if(type==='shrub'){
     const cols=['#4a6b2a','#5b7a3a','#3d5c2a','#4f6c33','#547536','#3a5a28'];
-    for(let i=0;i<18;i++){ctx.fillStyle=cols[i%cols.length];
-      ctx.beginPath();ctx.ellipse(128+(Math.random()-.5)*120,160+Math.random()*140,30+Math.random()*20,25+Math.random()*15,0,0,Math.PI*2);ctx.fill()}
+    for(let i=0;i<18;i++){ctx.fillStyle=cols[i%cols.length];ctx.beginPath();ctx.ellipse(128+(Math.random()-.5)*120,160+Math.random()*140,30+Math.random()*20,25+Math.random()*15,0,0,Math.PI*2);ctx.fill()}
     ctx.strokeStyle='#4a3a28';ctx.lineWidth=5;ctx.lineCap='round';
     for(let i=0;i<5;i++){const bx=60+Math.random()*136;ctx.beginPath();ctx.moveTo(bx,330);ctx.lineTo(bx+(Math.random()-.5)*20,180+Math.random()*60);ctx.stroke()}
   }else if(type==='dense'){
     const cols=['#3a5a1a','#4a6b2a','#2d4c14','#3d5c2a','#456b26','#5a7a3a'];
-    for(let i=0;i<22;i++){ctx.fillStyle=cols[i%cols.length];
-      ctx.beginPath();ctx.ellipse(128+(Math.random()-.5)*140,120+Math.random()*180,35+Math.random()*20,30+Math.random()*15,0,0,Math.PI*2);ctx.fill()}
+    for(let i=0;i<22;i++){ctx.fillStyle=cols[i%cols.length];ctx.beginPath();ctx.ellipse(128+(Math.random()-.5)*140,120+Math.random()*180,35+Math.random()*20,30+Math.random()*15,0,0,Math.PI*2);ctx.fill()}
     ctx.strokeStyle='#3a2a18';ctx.lineWidth=4;ctx.lineCap='round';
     for(let i=0;i<6;i++){const bx=40+Math.random()*176;ctx.beginPath();ctx.moveTo(bx,330);ctx.lineTo(bx+(Math.random()-.5)*15,140+Math.random()*80);ctx.stroke()}
   }else if(type==='palm'){
@@ -286,18 +648,13 @@ function makeCanvasVeg(type){
     ctx.strokeStyle='#7a6a4a';ctx.lineWidth=3;
     for(let i=0;i<10;i++){const yy=100+i*22;ctx.beginPath();ctx.moveTo(116,yy);ctx.lineTo(140,yy);ctx.stroke()}
     ctx.strokeStyle='#3d5c2a';ctx.lineWidth=8;ctx.lineCap='round';
-    for(let i=0;i<11;i++){const ang=-Math.PI/2+(i-5)*.32;const ex=132+Math.cos(ang)*90,ey=55+Math.sin(ang)*70;
-      ctx.beginPath();ctx.moveTo(132,60);ctx.quadraticCurveTo(132+Math.cos(ang)*50,55+Math.sin(ang)*40-15,ex,ey);ctx.stroke()}
+    for(let i=0;i<11;i++){const ang=-Math.PI/2+(i-5)*.32;const ex=132+Math.cos(ang)*90,ey=55+Math.sin(ang)*70;ctx.beginPath();ctx.moveTo(132,60);ctx.quadraticCurveTo(132+Math.cos(ang)*50,55+Math.sin(ang)*40-15,ex,ey);ctx.stroke()}
   }else{
     ctx.lineWidth=5;ctx.lineCap='round';
-    for(let i=0;i<24;i++){const bx=30+Math.random()*196;const bend=(Math.random()-.5)*40;
-      ctx.strokeStyle=['#6b8a2a','#7a9a3a','#5a7a22','#8aaa4a','#4a6a1a','#9ab04a'][i%6];
-      ctx.beginPath();ctx.moveTo(bx,330);ctx.quadraticCurveTo(bx+bend*.4,230,bx+bend,130+Math.random()*50);ctx.stroke()}
+    for(let i=0;i<24;i++){const bx=30+Math.random()*196;const bend=(Math.random()-.5)*40;ctx.strokeStyle=['#6b8a2a','#7a9a3a','#5a7a22','#8aaa4a','#4a6a1a','#9ab04a'][i%6];ctx.beginPath();ctx.moveTo(bx,330);ctx.quadraticCurveTo(bx+bend*.4,230,bx+bend,130+Math.random()*50);ctx.stroke()}
   }
   const tex=new THREE.CanvasTexture(c);tex.needsUpdate=true;return tex;
 }
-
-// 7 tipos de vegetação — TUDO canvas, ZERO dependência externa
 const realTextures=[
   {tex:makeCanvasVeg('tree1'),scale:[6,10],type:'tree'},
   {tex:makeCanvasVeg('tree2'),scale:[5,9],type:'tree'},
@@ -307,162 +664,83 @@ const realTextures=[
   {tex:makeCanvasVeg('palm'),scale:[8,12],type:'palm'},
   {tex:makeCanvasVeg('grass'),scale:[1.5,2.5],type:'grass'}
 ];
-// Carrega texturas (tenta PNG real, fallback canvas)
-const loader=new THREE.TextureLoader();
-const vegMaterials=[];
-let loadedCount=0;
-const totalToLoad=TREE_URLS.length+3; // +3 para canvas fallbacks
-
-// Canvas fallbacks (sempre disponíveis)
-const canvasTexTree=makeCanvasVeg('tree');
-const canvasTexShrub=makeCanvasVeg('shrub');
-const canvasTexPalm=makeCanvasVeg('palm');
-const canvasTexGrass=makeCanvasVeg('grass');
-
-// Tenta carregar PNGs reais
-
-let texturesReady=false;
-
-function initVegTextures(){
-  // Usa canvas como base (funciona offline)
-  realTextures.push(
-    {tex:canvasTexTree,scale:[6,9],type:'tree'},
-    {tex:canvasTexTree,scale:[5,8],type:'tree'},
-    {tex:canvasTexShrub,scale:[3,5],type:'shrub'},
-    {tex:canvasTexShrub,scale:[2.5,4.5],type:'shrub'},
-    {tex:canvasTexPalm,scale:[8,12],type:'palm'},
-    {tex:canvasTexGrass,scale:[1.5,2.5],type:'grass'},
-    {tex:canvasTexGrass,scale:[1,2],type:'grass'}
-  );
-
-  // Tenta carregar imagens reais (sobrescreve se funcionar)
-  TREE_URLS.forEach((url,idx)=>{
-    loader.load(url,tex=>{
-      tex.encoding=THREE.sRGBEncoding;
-      if(idx<2)realTextures[idx]={tex,scale:[6,10],type:'tree'};
-      else if(idx<4)realTextures[idx]={tex,scale:[5,9],type:'tree'};
-      else realTextures[4]={tex,scale:[8,12],type:'palm'};
-    },undefined,()=>{/* falha silenciosa — usa canvas */});
-  });
-  texturesReady=true;
-}
-initVegTextures();
-
-// ═══════════════════════════════════════════════════════════════
-// PRÉ-GERA POSIÇÕES DE TODA A VEGETAÇÃO (dados puros)
-// ═══════════════════════════════════════════════════════════════
 const BURITI_THRESH=elevMin+(elevMax-elevMin)*.35;
 function vegExclude(px,pz){
   if(roundCircles.some(c=>Math.hypot(px-c.cx,pz-c.cz)<c.outerR+40))return true;
   for(const b of(D.bridges||[]))for(const p of b.points)if(Math.hypot(p.x-px,p.z-pz)<35)return true;
+  if(ptInAnyX(px,pz))return true;
   return false;
 }
-
-
-// Na geração de posições, substitua as referências:
-// texIdx 0,1,2 = árvores diferentes
-// texIdx 3 = arbusto
-// texIdx 4 = moita densa  
-// texIdx 5 = palmeira/buriti
-// texIdx 6 = capim
-
-const allVegData=[];
-const VEG_STEP=6;
-
+function vegExcludeStreets(px,pz){
+  for(let i=0;i<streetExclusionPts.length;i++){const s=streetExclusionPts[i];const dx=s.x-px,dz=s.z-pz;if(dx*dx+dz*dz<(s.half+6)*(s.half+6))return true;}
+  return false;
+}
+const allVegData=[];const VEG_STEP=6;
 for(let dist=0;dist<totalKmCurve*1000;dist+=VEG_STEP){
   const st=stateAtDistance(dist);
   const len2=Math.hypot(st.dirX,st.dirZ)||1;
   const nx2=-st.dirZ/len2,nz2=st.dirX/len2;
   const{w}=widthFor(st);
   const roadEdge=w/2+SHOULDER_WIDTH+TRANSITION_DIST;
-
+  const nearUrban=st.km<=4.5;
   [-1,1].forEach(side=>{
-    // Camada 1: Capim rente
     for(let k=0;k<2;k++){
       const lat=roadEdge+.5+Math.random()*3;
       const px=st.x+nx2*lat*side+(Math.random()-.5)*2,pz=st.z+nz2*lat*side+(Math.random()-.5)*2;
-      if(vegExclude(px,pz))continue;
+      if(vegExclude(px,pz)||(nearUrban&&vegExcludeStreets(px,pz)))continue;
       const py=sampleSRTM(st.km,lat);
       allVegData.push({x:px,y:py+.7,z:pz,texIdx:6,scale:1.5+Math.random()*1});
     }
-    // Camada 2: Arbustos/moitas densas
     for(let k=0;k<3;k++){
       const lat=roadEdge+2+Math.random()*12;
       const px=st.x+nx2*lat*side+(Math.random()-.5)*4,pz=st.z+nz2*lat*side+(Math.random()-.5)*4;
-      if(vegExclude(px,pz))continue;
-      const py=sampleSRTM(st.km,lat);
-      const s=2.5+Math.random()*3;
+      if(vegExclude(px,pz)||(nearUrban&&vegExcludeStreets(px,pz)))continue;
+      const py=sampleSRTM(st.km,lat);const s=2.5+Math.random()*3;
       allVegData.push({x:px,y:py+s/2-.3,z:pz,texIdx:3+Math.floor(Math.random()*2),scale:s});
     }
-    // Camada 3: Árvores próximas
     if(Math.random()<.6){
       const lat=roadEdge+4+Math.random()*35;
       const px=st.x+nx2*lat*side+(Math.random()-.5)*5,pz=st.z+nz2*lat*side+(Math.random()-.5)*5;
-      if(!vegExclude(px,pz)){
+      if(!vegExclude(px,pz)&&!(nearUrban&&vegExcludeStreets(px,pz))){
         const py=sampleSRTM(st.km,lat);const s=5+Math.random()*5;
         allVegData.push({x:px,y:py+s/2-.3,z:pz,texIdx:Math.floor(Math.random()*3),scale:s});
       }
     }
-    // Camada 4: Árvores distantes
     if(Math.random()<.4){
       const lat=roadEdge+20+Math.random()*60;
       const px=st.x+nx2*lat*side+(Math.random()-.5)*6,pz=st.z+nz2*lat*side+(Math.random()-.5)*6;
-      if(!vegExclude(px,pz)){
+      if(!vegExclude(px,pz)&&!(nearUrban&&vegExcludeStreets(px,pz))){
         const py=sampleSRTM(st.km,lat);const s=5+Math.random()*5;
         allVegData.push({x:px,y:py+s/2-.3,z:pz,texIdx:Math.floor(Math.random()*3),scale:s});
       }
     }
-    // Camada 5: Buriti em baixada
     if(Math.random()<.08){
       const lat=roadEdge+8+Math.random()*40;
       const px=st.x+nx2*lat*side,pz=st.z+nz2*lat*side;
-      if(!vegExclude(px,pz)){
+      if(!vegExclude(px,pz)&&!(nearUrban&&vegExcludeStreets(px,pz))){
         const py=sampleSRTM(st.km,lat);
-        if(py<BURITI_THRESH){
-          allVegData.push({x:px,y:py+4.5,z:pz,texIdx:5,scale:8+Math.random()*4});
-        }
+        if(py<BURITI_THRESH)allVegData.push({x:px,y:py+4.5,z:pz,texIdx:5,scale:8+Math.random()*4});
       }
     }
   });
 }
 console.log('Vegetação:',allVegData.length,'posições');
-
-// ═══════════════════════════════════════════════════════════════
-// POOL DE SPRITES — só renderiza 300m ao redor do caminhão
-// ═══════════════════════════════════════════════════════════════
-const VEG_RENDER_DIST=300;
-const VEG_RENDER_DIST_SQ=VEG_RENDER_DIST*VEG_RENDER_DIST;
-const MAX_VISIBLE_VEG=3000; // máximo de sprites visíveis (performance)
-
+const VEG_RENDER_DIST_SQ=300*300,MAX_VISIBLE_VEG=3000;
 const vegPool=[];
 for(let i=0;i<MAX_VISIBLE_VEG;i++){
   const mat=new THREE.SpriteMaterial({transparent:true,alphaTest:.1,depthWrite:false});
-  const spr=new THREE.Sprite(mat);
-  spr.visible=false;
-  scene.add(spr);
-  vegPool.push(spr);
+  const spr=new THREE.Sprite(mat);spr.visible=false;scene.add(spr);vegPool.push(spr);
 }
-
-function updateVegetation(truckX,truckZ){
-  // Esconde todos
+function updateVegetation(tx,tz){
   for(let i=0;i<vegPool.length;i++)vegPool[i].visible=false;
-
-  // Encontra vegetação dentro de 300m
   let count=0;
   for(let i=0;i<allVegData.length&&count<MAX_VISIBLE_VEG;i++){
-    const v=allVegData[i];
-    const dx=v.x-truckX,dz=v.z-truckZ;
+    const v=allVegData[i];const dx=v.x-tx,dz=v.z-tz;
     if(dx*dx+dz*dz<VEG_RENDER_DIST_SQ){
       const spr=vegPool[count];
-      const texData=realTextures[v.texIdx]||realTextures[0];
-      if(spr.material.map!==texData.tex){
-        spr.material.map=texData.tex;
-        spr.material.needsUpdate=true;
-      }
-      spr.scale.set(v.scale*.8,v.scale,1);
-      spr.position.set(v.x,v.y,v.z);
-      spr.visible=true;
-      count++;
+      const td=realTextures[v.texIdx]||realTextures[0];
+      if(spr.material.map!==td.tex){spr.material.map=td.tex;spr.material.needsUpdate=true;}
+      spr.scale.set(v.scale*.8,v.scale,1);spr.position.set(v.x,v.y,v.z);spr.visible=true;count++;
     }
   }
 }
@@ -487,7 +765,6 @@ truck.add(cab,ct,ws,ch,tr);
 const wm=new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:.9});
 [[-1.25,4.4],[1.25,4.4],[-1.25,1.3],[1.25,1.3],[-1.25,-3],[1.25,-3],[-1.25,-6.6],[1.25,-6.6]].forEach(([xx,zz])=>{const wh=new THREE.Mesh(new THREE.CylinderGeometry(.55,.55,.5,12),wm);wh.rotation.z=Math.PI/2;wh.position.set(xx,.55,zz);wh.castShadow=true;truck.add(wh)})}
 scene.add(truck);
-
 const SPAWN_KM=3;
 {const st0=stateAtDistance(SPAWN_KM*1000);const h0=Math.atan2(st0.dirX,st0.dirZ);truck.position.set(st0.x,st0.y+.1,st0.z);truck.rotation.y=h0;camera.position.set(st0.x-Math.sin(h0)*16,st0.y+6,st0.z-Math.cos(h0)*16);camera.lookAt(st0.x,st0.y+2,st0.z)}
 
@@ -501,11 +778,29 @@ renderer.domElement.addEventListener('mousedown',e=>{if(camMode===3){orbiting=tr
 addEventListener('mouseup',()=>{orbiting=false});
 addEventListener('mousemove',e=>{if(!orbiting||camMode!==3)return;orbitAz-=(e.clientX-lmx)*.007;orbitEl=Math.max(.05,Math.min(1.5,orbitEl-(e.clientY-lmy)*.007));lmx=e.clientX;lmy=e.clientY});
 renderer.domElement.addEventListener('wheel',e=>{if(camMode!==3)return;orbitR=Math.max(8,Math.min(300,orbitR+e.deltaY*.06));e.preventDefault()},{passive:false});
+const isTouchDevice=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+if(isTouchDevice)document.getElementById('touchControls').classList.add('active');
+function bindHold(id,keyName){
+  const el=document.getElementById(id);
+  const down=e=>{e.preventDefault();keys[keyName]=true;el.classList.add('pressed')};
+  const up=e=>{if(e)e.preventDefault();keys[keyName]=false;el.classList.remove('pressed')};
+  el.addEventListener('touchstart',down,{passive:false});el.addEventListener('touchend',up,{passive:false});el.addEventListener('touchcancel',up,{passive:false});
+  el.addEventListener('mousedown',down);el.addEventListener('mouseup',up);el.addEventListener('mouseleave',up);
+}
+bindHold('btnForward','w');bindHold('btnBackward','s');bindHold('btnLeft','a');bindHold('btnRight','d');
+document.getElementById('btnCamera').addEventListener('touchstart',e=>{e.preventDefault();camMode=(camMode+1)%4},{passive:false});
+document.getElementById('btnCamera').addEventListener('click',()=>{camMode=(camMode+1)%4});
+let touchOrbiting=false,tlx=0,tly=0,pinchDist=0;
+function touchDist(t0,t1){return Math.hypot(t1.clientX-t0.clientX,t1.clientY-t0.clientY)}
+renderer.domElement.addEventListener('touchstart',e=>{if(camMode!==3)return;if(e.touches.length===1){touchOrbiting=true;tlx=e.touches[0].clientX;tly=e.touches[0].clientY}else if(e.touches.length===2){touchOrbiting=false;pinchDist=touchDist(e.touches[0],e.touches[1])}},{passive:true});
+renderer.domElement.addEventListener('touchmove',e=>{if(camMode!==3)return;if(e.touches.length===1&&touchOrbiting){const dx=e.touches[0].clientX-tlx,dy=e.touches[0].clientY-tly;orbitAz-=dx*0.007;orbitEl=Math.max(0.05,Math.min(1.5,orbitEl-dy*0.007));tlx=e.touches[0].clientX;tly=e.touches[0].clientY;e.preventDefault()}else if(e.touches.length===2){const d=touchDist(e.touches[0],e.touches[1]);orbitR=Math.max(8,Math.min(300,orbitR-(d-pinchDist)*0.15));pinchDist=d;e.preventDefault()}},{passive:false});
+renderer.domElement.addEventListener('touchend',e=>{if(e.touches.length<1)touchOrbiting=false},{passive:true});
 
+// ═══════════════════════════════════════════════════════════════
+// 13. LOOP
+// ═══════════════════════════════════════════════════════════════
 let distM=SPAWN_KM*1000,speed=0,laneOffset=0;
-const MAX_SPEED=34;
-let vegUpdateTimer=0;
-
+const MAX_SPEED=34;let vegUpdateTimer=0;
 function update(dt){
   if(keys['w']||keys['arrowup'])speed+=12*dt;else if(keys['s']||keys['arrowdown'])speed-=16*dt;else speed-=Math.sign(speed)*4*dt;
   speed=Math.max(-MAX_SPEED*.4,Math.min(MAX_SPEED,speed));if(Math.abs(speed)<.05)speed=0;
@@ -516,14 +811,8 @@ function update(dt){
   laneOffset=Math.max(-maxOff,Math.min(maxOff,laneOffset));
   const heading=Math.atan2(st.dirX,st.dirZ);
   truck.position.set(st.x+nx3*laneOffset,st.y+.1,st.z+nz3*laneOffset);truck.rotation.y=heading;
-
-  // ★ ATUALIZA VEGETAÇÃO A CADA 0.3s (performance)
   vegUpdateTimer+=dt;
-  if(vegUpdateTimer>.3){
-    vegUpdateTimer=0;
-    updateVegetation(truck.position.x,truck.position.z);
-  }
-
+  if(vegUpdateTimer>.3){vegUpdateTimer=0;updateVegetation(truck.position.x,truck.position.z);}
   const tp=truck.position.clone(),look=tp.clone().add(new THREE.Vector3(0,2,0));
   if(camMode===0){camera.position.lerp(tp.clone().add(new THREE.Vector3(-Math.sin(heading)*18,7,-Math.cos(heading)*18)),.045);camera.lookAt(look)}
   else if(camMode===1){camera.position.lerp(tp.clone().add(new THREE.Vector3(-Math.sin(heading)*7,3,-Math.cos(heading)*7)),.07);camera.lookAt(look)}
@@ -534,16 +823,11 @@ function update(dt){
   document.getElementById('progressfill').style.width=((distM/(totalKmCurve*1000))*100)+'%';
   document.getElementById('datapanel').innerHTML=`<b>KM:</b> ${st.km.toFixed(1)} / ${totalKmCurve.toFixed(1)}<br><b>Elevação:</b> ${Math.round(st.y)}m<br><b>Faixas:</b> ${st.lanes||'?'}<br><b>Mão:</b> ${st.oneway?'única':'dupla'}<br><b>Superfície:</b> ${st.surface||'?'}<br>${st.bridge?'<span class="flag flag-bridge">PONTE</span><br>':''}<b>Ref:</b> ${st.ref||'—'}`;
   document.getElementById('orbithint').style.display=camMode===3?'block':'none';
+  document.getElementById('touchOrbitHint').style.display=(camMode===3&&isTouchDevice)?'block':'none';
 }
-
-// ═══════════════════════════════════════════════════════════════
-// 13. LOOP
-// ═══════════════════════════════════════════════════════════════
 document.getElementById('loading').style.display='none';
 document.getElementById('hud').style.display='';
-// Primeira atualização de vegetação
 updateVegetation(truck.position.x,truck.position.z);
-
 let lastT=performance.now();
 function animate(){requestAnimationFrame(animate);const now=performance.now();const dt=Math.min((now-lastT)/1000,.1);lastT=now;update(dt);renderer.render(scene,camera)}
 animate();
